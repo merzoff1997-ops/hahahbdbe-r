@@ -9,9 +9,10 @@ import logging
 from datetime import datetime, timedelta
 
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import ADMIN_ID, SUBSCRIPTION_PLANS, BRAND_NAME
 from database import db
@@ -54,19 +55,18 @@ async def admin_users_list(callback: CallbackQuery):
         text += f"   ID: <code>{user['user_id']}</code> | Подписка: {sub_status}\n\n"
     
     # Создаем inline кнопки с ID пользователей
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
     
     for user in users[:10]:  # Первые 10 для кнопок
         builder.row(
-            callback.types.InlineKeyboardButton(
+            InlineKeyboardButton(
                 text=f"{user['first_name']} - {user['user_id']}",
                 callback_data=f"admin_user_{user['user_id']}"
             )
         )
     
     builder.row(
-        callback.types.InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")
+        InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode=ParseMode.HTML)
@@ -159,7 +159,6 @@ async def admin_give_subscription(callback: CallbackQuery):
     user_id = int(callback.data.split("_")[3])
     
     # Создаем меню выбора плана
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
     
     for plan_key, plan in SUBSCRIPTION_PLANS.items():
@@ -167,14 +166,14 @@ async def admin_give_subscription(callback: CallbackQuery):
             continue
         
         builder.row(
-            callback.types.InlineKeyboardButton(
+            InlineKeyboardButton(
                 text=f"{plan['name']} ({plan['duration_days']} дней)",
                 callback_data=f"admin_grant_{plan_key}_{user_id}"
             )
         )
     
     builder.row(
-        callback.types.InlineKeyboardButton(
+        InlineKeyboardButton(
             text="🔙 Отмена",
             callback_data=f"admin_user_{user_id}"
         )
@@ -392,10 +391,9 @@ async def admin_branding(callback: CallbackQuery):
     text += f"<b>Текущее приветствие:</b>\n{current_welcome}\n\n"
     text += "Отправьте новый текст приветствия для изменения."
     
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
     builder.row(
-        callback.types.InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")
+        InlineKeyboardButton(text="🔙 Назад", callback_data="admin_panel")
     )
     
     await callback.message.edit_text(
@@ -420,10 +418,9 @@ async def admin_broadcast(callback: CallbackQuery):
     text += "Отправьте сообщение, которое нужно разослать всем пользователям.\n\n"
     text += "⚠️ Будьте осторожны, это действие нельзя отменить!"
     
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
     builder.row(
-        callback.types.InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_panel")
+        InlineKeyboardButton(text="🔙 Отмена", callback_data="admin_panel")
     )
     
     await callback.message.edit_text(
