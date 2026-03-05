@@ -9,7 +9,7 @@ import logging
 from datetime import datetime
 
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, Message, FSInputFile
+from aiogram.types import CallbackQuery, Message, FSInputFile, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.enums import ParseMode
@@ -81,11 +81,11 @@ async def show_deleted_messages(callback: CallbackQuery):
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        callback.types.InlineKeyboardButton(text="📥 Экспорт", callback_data="export_deleted"),
-        callback.types.InlineKeyboardButton(text="🔄 Обновить", callback_data="deleted_messages")
+        InlineKeyboardButton(text="📥 Экспорт", callback_data="export_deleted"),
+        InlineKeyboardButton(text="🔄 Обновить", callback_data="deleted_messages")
     )
     builder.row(
-        callback.types.InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")
+        InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")
     )
     
     await callback.message.edit_text(
@@ -122,11 +122,11 @@ async def show_edited_messages(callback: CallbackQuery):
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        callback.types.InlineKeyboardButton(text="📥 Экспорт", callback_data="export_edited"),
-        callback.types.InlineKeyboardButton(text="🔄 Обновить", callback_data="edited_messages")
+        InlineKeyboardButton(text="📥 Экспорт", callback_data="export_edited"),
+        InlineKeyboardButton(text="🔄 Обновить", callback_data="edited_messages")
     )
     builder.row(
-        callback.types.InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")
+        InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")
     )
     
     await callback.message.edit_text(
@@ -166,10 +166,10 @@ async def show_filtered_contacts(callback: CallbackQuery):
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        callback.types.InlineKeyboardButton(text="📥 Экспорт", callback_data=f"export_contacts_{contact_type}")
+        InlineKeyboardButton(text="📥 Экспорт", callback_data=f"export_contacts_{contact_type}")
     )
     builder.row(
-        callback.types.InlineKeyboardButton(text="🔙 Назад", callback_data="detected_contacts")
+        InlineKeyboardButton(text="🔙 Назад", callback_data="detected_contacts")
     )
     
     await callback.message.edit_text(
@@ -207,17 +207,17 @@ async def show_checklists(callback: CallbackQuery):
     
     for checklist in checklists:
         builder.row(
-            callback.types.InlineKeyboardButton(
+            InlineKeyboardButton(
                 text=f"📋 {checklist['title']}",
                 callback_data=f"view_checklist_{checklist['id']}"
             )
         )
     
     builder.row(
-        callback.types.InlineKeyboardButton(text="➕ Создать чеклист", callback_data="create_checklist")
+        InlineKeyboardButton(text="➕ Создать чеклист", callback_data="create_checklist")
     )
     builder.row(
-        callback.types.InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")
+        InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")
     )
     
     await callback.message.edit_text(
@@ -339,6 +339,42 @@ async def toggle_checklist_item(callback: CallbackQuery):
 
 
 # ═══════════════════════════════════════════════════════════
+#  НАСТРОЙКИ
+# ═══════════════════════════════════════════════════════════
+
+@router.callback_query(F.data == "settings")
+async def show_settings(callback: CallbackQuery):
+    """Показать настройки пользователя"""
+    user_id = callback.from_user.id
+    user = db.get_user(user_id)
+    
+    text = "⚙️ <b>Настройки</b>\n\n"
+    text += f"<b>Язык:</b> {user.get('language_code', 'ru').upper()}\n"
+    text += f"<b>Режим мониторинга:</b> {user.get('monitoring_mode', 'business')}\n\n"
+    
+    subscription = db.get_active_subscription(user_id)
+    if subscription:
+        text += "💎 <b>Подписка активна</b>\n"
+    else:
+        text += "⚠️ <b>Нет активной подписки</b>\n"
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🔄 Dual Mode", callback_data="dual_mode_settings"),
+        InlineKeyboardButton(text="💎 Подписка", callback_data="subscriptions")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")
+    )
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=builder.as_markup(),
+        parse_mode=ParseMode.HTML
+    )
+
+
+# ═══════════════════════════════════════════════════════════
 #  DUAL MODE НАСТРОЙКИ
 # ═══════════════════════════════════════════════════════════
 
@@ -410,6 +446,86 @@ async def set_monitoring_mode(callback: CallbackQuery, state: FSMContext):
     await dual_mode_settings(callback)
 
 
+@router.callback_query(F.data.startswith("set_mode_"))
+async def set_monitoring_mode(callback: CallbackQuery, state: FSMContext):
+    """Установить режим мониторинга"""
+    user_id = callback.from_user.id
+    mode = callback.data.split("_")[2]
+    
+    # Обновляем режим в БД
+    cursor = db.conn.cursor()
+    cursor.execute("UPDATE users SET monitoring_mode = ? WHERE user_id = ?", (mode, user_id))
+    db.conn.commit()
+    
+    # Если выбран userbot или dual режим, запрашиваем телефон
+    if mode in ['userbot', 'dual']:
+        from userbot import get_userbot_status
+        userbot_status = get_userbot_status(user_id)
+        
+        if not userbot_status or not userbot_status['is_authorized']:
+            await callback.message.edit_text(
+                "📱 <b>Настройка Userbot</b>\n\n"
+                "Для работы Userbot режима необходима авторизация.\n\n"
+                "Введите номер телефона в международном формате\n"
+                "(например, +79991234567):",
+                parse_mode=ParseMode.HTML
+            )
+            await state.set_state(DualModeStates.waiting_for_phone)
+            return
+    
+    await callback.answer(f"✅ Режим изменен на {mode}")
+    await dual_mode_settings(callback)
+
+
+@router.callback_query(F.data == "mode_info")
+async def show_mode_info(callback: CallbackQuery):
+    """Информация о режимах работы"""
+    text = """
+📖 <b>Информация о режимах</b>
+
+<b>🤖 Business API</b>
+• Работает с бизнес-чатами
+• Требует Telegram Premium
+• Автоматическая настройка
+• Стабильная работа
+
+<b>Ограничения:</b>
+❌ Сообщения с таймером самоуничтожения
+❌ Сообщения с лимитом просмотра
+❌ Секретные чаты
+
+<b>👤 Userbot</b>
+• Работает через ваш аккаунт
+• Мониторит все обычные чаты
+• Требует авторизацию по номеру
+• Может обходить некоторые ограничения Business API
+
+<b>Преимущества:</b>
+✅ Работает со всеми чатами
+✅ Может отследить удаление чата
+✅ Сохраняет медиа из удаленных сообщений
+
+<b>🔄 Dual Mode</b>
+• Использует оба режима одновременно
+• Максимальное покрытие
+• Рекомендуемый режим для полного мониторинга
+
+<b>Рекомендация:</b>
+Для максимальной эффективности используйте Dual Mode
+"""
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🔙 Назад", callback_data="dual_mode_settings")
+    )
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=builder.as_markup(),
+        parse_mode=ParseMode.HTML
+    )
+
+
 @router.message(DualModeStates.waiting_for_phone)
 async def process_userbot_phone(message: Message, state: FSMContext):
     """Обработка номера телефона для userbot"""
@@ -420,47 +536,91 @@ async def process_userbot_phone(message: Message, state: FSMContext):
         await message.answer("❌ Номер должен начинаться с + и кода страны")
         return
     
-    # Запускаем userbot
-    from userbot import start_userbot_for_user
-    
-    success, msg = await start_userbot_for_user(user_id, phone)
-    
-    if success:
-        await state.update_data(phone=phone)
-        await state.set_state(DualModeStates.waiting_for_code)
+    try:
+        # Запускаем userbot
+        from userbot import start_userbot_for_user
         
+        success, msg = await start_userbot_for_user(user_id, phone)
+        
+        if success:
+            await state.update_data(phone=phone)
+            await state.set_state(DualModeStates.waiting_for_code)
+            
+            await message.answer(
+                f"📱 {msg}\n\n"
+                "⚠️ <b>ВАЖНО:</b> Код приходит в Telegram, а не по SMS!\n"
+                "Проверьте сообщения от Telegram и введите код в течение 5 минут.\n\n"
+                "Введите код подтверждения (только цифры):",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await message.answer(f"❌ {msg}")
+            await state.clear()
+    except Exception as e:
+        logger.error(f"Ошибка запуска userbot: {e}")
         await message.answer(
-            f"📱 {msg}\n\n"
-            "Введите код подтверждения из Telegram:"
+            "❌ Ошибка при запуске userbot.\n\n"
+            "Попробуйте еще раз или обратитесь к администратору."
         )
-    else:
-        await message.answer(f"❌ {msg}")
         await state.clear()
 
 
 @router.message(DualModeStates.waiting_for_code)
 async def process_userbot_code(message: Message, state: FSMContext):
     """Обработка кода подтверждения"""
-    code = message.text.strip()
+    code = message.text.strip().replace(" ", "").replace("-", "")
     user_id = message.from_user.id
+    
+    # Проверка формата кода
+    if not code.isdigit() or len(code) != 5:
+        await message.answer(
+            "❌ Неверный формат кода.\n\n"
+            "Код должен содержать 5 цифр.\n"
+            "Введите код еще раз:"
+        )
+        return
     
     data = await state.get_data()
     phone = data.get('phone')
     
-    from userbot import sign_in_userbot
-    
-    success, msg = await sign_in_userbot(user_id, code, phone)
-    
-    if success:
+    try:
+        from userbot import sign_in_userbot
+        
+        success, msg = await sign_in_userbot(user_id, code, phone)
+        
+        if success:
+            await message.answer(
+                f"✅ {msg}\n\n"
+                "Userbot успешно авторизован и начал мониторинг!",
+                reply_markup=get_main_menu(user_id)
+            )
+            await state.clear()
+        else:
+            if "expired" in msg.lower():
+                await message.answer(
+                    "❌ Код истек!\n\n"
+                    "Код действителен только 5 минут.\n"
+                    "Начните процесс заново через меню Dual Mode.",
+                    reply_markup=get_main_menu(user_id)
+                )
+                await state.clear()
+            else:
+                await message.answer(
+                    f"❌ {msg}\n\n"
+                    "Проверьте правильность кода и попробуйте еще раз:"
+                )
+    except Exception as e:
+        logger.error(f"Ошибка авторизации userbot: {e}")
         await message.answer(
-            f"✅ {msg}\n\n"
-            "Userbot успешно авторизован и начал мониторинг!",
+            "❌ Ошибка авторизации.\n\n"
+            "Возможные причины:\n"
+            "• Неверный код\n"
+            "• Код истек\n"
+            "• Проблема соединения\n\n"
+            "Начните процесс заново через меню Dual Mode.",
             reply_markup=get_main_menu(user_id)
         )
-    else:
-        await message.answer(f"❌ {msg}")
-    
-    await state.clear()
+        await state.clear()
 
 
 # ═══════════════════════════════════════════════════════════
